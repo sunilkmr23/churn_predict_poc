@@ -1,0 +1,17 @@
+{
+  "best_model": "random_forest",
+  "combined_score": 0.7999,
+  "feature_count": 28,
+  "metrics": {
+    "f1": 0.8892782060266293,
+    "roc_auc": 0.5915046630763168,
+    "combined_score": 0.7999461431415356,
+    "best_params": {
+      "n_estimators": 250,
+      "min_samples_leaf": 2,
+      "max_depth": 12,
+      "class_weight": "balanced_subsample"
+    }
+  },
+  "dataset": "fiber_customers_realistic.csv"
+}

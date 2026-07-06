@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fiber Churn Intelligence - Project Overview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel2: #1f2937;
+      --text: #e5eefb;
+      --muted: #bfdbfe;
+      --accent: #38bdf8;
+      --good: #22c55e;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #07111f, #0f172a 45%, #111827);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    h1, h2, h3 { line-height: 1.2; }
+    .hero {
+      background: rgba(17,24,39,0.92);
+      border: 1px solid rgba(148,163,184,0.18);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.35);
+      margin-bottom: 20px;
+    }
+    .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .card {
+      background: rgba(17,24,39,0.96);
+      border: 1px solid rgba(148,163,184,0.18);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.25);
+    }
+    code, pre {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+    }
+    pre {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 12px;
+      overflow: auto;
+      color: #bfdbfe;
+    }
+    .chip {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.12);
+      color: #7dd3fc;
+      font-size: 12px;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+    .badge { color: #bbf7d0; }
+    ul { padding-left: 18px; }
+    .note { color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Fiber Churn Intelligence</h1>
+      <p>This project is a simple telecom churn prediction POC. It generates realistic customer data, trains a machine learning model, exposes an API for predictions, and supports business-friendly threshold tuning for retention campaigns.</p>
+      <div>
+        <span class="chip">Data generation</span>
+        <span class="chip">Model training</span>
+        <span class="chip">FastAPI prediction</span>
+        <span class="chip">Campaign threshold tuning</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>1. What the project does</h2>
+        <ul>
+          <li>Creates a telecom customer dataset with churn-related signals.</li>
+          <li>Builds features like outages, complaints, billing, usage, and contract behavior.</li>
+          <li>Trains a churn model using scikit-learn.</li>
+          <li>Serves predictions with FastAPI at <code>/predict</code>.</li>
+          <li>Supports threshold tuning for retention campaigns using <code>/threshold-tuning</code>.</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>2. Main files</h2>
+        <ul>
+          <li><strong>generate_dataset.py</strong> — creates the customer CSV.</li>
+          <li><strong>train_model.py</strong> — trains and evaluates the model.</li>
+          <li><strong>app/main.py</strong> — FastAPI service for predictions.</li>
+          <li><strong>threshold_tuning.json</strong> — business threshold recommendations.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid" style="margin-top: 18px;">
+      <article class="card">
+        <h2>3. Flow of the system</h2>
+        <ol>
+          <li>Generate customer records.</li>
+          <li>Engineer useful features such as service stress, billing risk, and usage drop.</li>
+          <li>Train a model and compare candidate algorithms.</li>
+          <li>Save the best model and threshold settings.</li>
+          <li>Use the API to estimate churn risk for any customer.</li>
+        </ol>
+      </article>
+
+      <article class="card">
+        <h2>4. Simple example</h2>
+        <p>Sample customer JSON passed to the API:</p>
+        <pre>{
+  "plan": "Premium",
+  "monthlyPrice": 1499,
+  "tenureMonths": 12,
+  "outages": 2,
+  "complaints": 1,
+  "supportCalls": 3,
+  "latePayments": 0,
+  "competitorAvailable": 0,
+  "monthlyContract": 1,
+  "speedMbps": 500,
+  "avgMonthlyUsageGb": 180,
+  "recentPlanChange": 0,
+  "contractRenewalDue": 0,
+  "region": "North"
+}</pre>
+        <p class="note">This is the type of input the model uses to estimate churn probability.</p>
+      </article>
+    </section>
+
+    <section class="grid" style="margin-top: 18px;">
+      <article class="card">
+        <h2>5. Example API response</h2>
+        <pre>{
+  "churn_prediction": 1,
+  "churn_probability": 0.529,
+  "threshold_used": 0.1,
+  "campaign": "retention_campaign",
+  "risk": "MEDIUM",
+  "risk_reason": "Moderate churn likelihood."
+}</pre>
+        <p class="note">A higher probability means the customer is more likely to churn. Thresholds help you tune this for campaign use cases.</p>
+      </article>
+
+      <article class="card">
+        <h2>6. Why threshold tuning matters</h2>
+        <p>Different business goals need different cutoffs:</p>
+        <ul>
+          <li><strong>Retention campaign:</strong> catch more likely churners, even if some false alarms happen.</li>
+          <li><strong>Balanced:</strong> normal compromise between precision and recall.</li>
+          <li><strong>Conservative:</strong> focus on the most certain high-risk customers.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid" style="margin-top: 18px;">
+      <article class="card">
+        <h2>7. Quick start</h2>
+        <pre>python generate_dataset.py
+python train_model.py
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000</pre>
+        <p class="note">After starting the app, open <code>/docs</code> for Swagger UI.</p>
+      </article>
+
+      <article class="card">
+        <h2>8. Sample business use case</h2>
+        <p>Suppose you want to run a retention offer for customers likely to leave in the next few months. You can choose a lower threshold to flag more candidates, then contact the highest-risk ones first.</p>
+        <p class="badge">Outcome: better targeting, improved retention, and lower wasted campaign spend.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

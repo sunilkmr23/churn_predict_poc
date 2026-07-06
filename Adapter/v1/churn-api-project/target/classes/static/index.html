@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telecom Churn Prediction</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            width: 400px;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        h2 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 20px;
+            border: none;
+            background: #007bff;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            background: #f1f1f1;
+        }
+
+        .high-risk {
+            color: red;
+            font-weight: bold;
+        }
+
+        .low-risk {
+            color: green;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <h2>Telecom Churn Prediction</h2>
+
+    <input type="text" id="customerId" placeholder="Enter Customer ID">
+
+    <button onclick="predictChurn()">Predict Churn</button>
+
+    <div id="result" class="result" style="display:none;">
+        <h3>Prediction Result</h3>
+
+        <p>
+            <strong>Customer ID:</strong>
+            <span id="customer"></span>
+        </p>
+
+        <p>
+            <strong>Prediction:</strong>
+            <span id="prediction"></span>
+        </p>
+
+        <p>
+            <strong>Probability:</strong>
+            <span id="probability"></span>
+        </p>
+
+        <p>
+            <strong>Risk:</strong>
+            <span id="risk"></span>
+        </p>
+    </div>
+
+</div>
+
+<script>
+
+    async function predictChurn() {
+
+        const customerId = document.getElementById("customerId").value;
+
+        if (!customerId) {
+            alert("Please enter customer ID");
+            return;
+        }
+
+        try {
+
+            const response = await fetch(
+            `http://localhost:3333/api/churn/predict-by-customer/${customerId}`,
+            {
+                method: "GET"
+            }
+        );
+
+
+            const data = await response.json();
+
+            document.getElementById("result").style.display = "block";
+
+            document.getElementById("customer").innerText = customerId;
+
+            document.getElementById("prediction").innerText =
+                data === 1
+                    ? "Customer Likely To Churn"
+                    : "Customer Will Stay";
+
+            document.getElementById("probability").innerText =
+                (data * 100).toFixed(2) + "%";
+
+            const riskElement = document.getElementById("risk");
+
+            if (data > 0.7) {
+                riskElement.innerText = "HIGH RISK";
+                riskElement.className = "high-risk";
+            } else {
+                riskElement.innerText = "LOW RISK";
+                riskElement.className = "low-risk";
+            }
+
+        } catch (error) {
+
+            console.error(error);
+
+            alert("Error calling prediction API");
+        }
+    }
+
+</script>
+
+</body>
+</html>/

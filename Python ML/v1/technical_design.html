@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fiber Churn Intelligence - Technical Design</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #07111f;
+      --panel: #111827;
+      --panel-2: #172235;
+      --text: #eff6ff;
+      --muted: #bfdbfe;
+      --accent: #38bdf8;
+      --good: #86efac;
+      --warn: #fde68a;
+      --bad: #fecaca;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      line-height: 1.6;
+      background:
+        radial-gradient(circle at top, #13263d 0%, #07111f 35%, #040b14 100%);
+    }
+    .wrap { max-width: 1300px; margin: 0 auto; padding: 24px; }
+    h1, h2, h3 { line-height: 1.15; margin-top: 0; }
+    .hero, .card, .noteBox {
+      background: rgba(17, 24, 39, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 18px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.35);
+    }
+    .hero { padding: 28px; margin-bottom: 18px; }
+    .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .card { padding: 18px; }
+    .chip {
+      display: inline-block; padding: 4px 10px; border-radius: 999px;
+      font-size: 12px; margin-right: 6px; margin-bottom: 6px;
+      background: rgba(56, 189, 248, 0.12); color: #bae6fd; border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 8px; background: rgba(134, 239, 172, 0.12); color: #bbf7d0; font-size: 12px; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 14px;
+      background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 12px; overflow: hidden;
+    }
+    th, td { padding: 10px; border-bottom: 1px solid rgba(148, 163, 184, 0.14); vertical-align: top; }
+    th { text-align: left; background: rgba(30, 41, 59, 0.95); color: #dbeafe; }
+    code, pre { font-family: Consolas, "Courier New", monospace; }
+    code { background: rgba(15, 23, 42, 0.9); color: #bfdbfe; padding: 2px 5px; border-radius: 6px; }
+    pre {
+      background: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 12px;
+      overflow: auto; color: #bfdbfe; font-size: 13px;
+    }
+    ul, ol { padding-left: 18px; }
+    .muted { color: var(--muted); }
+    .noteBox { padding: 12px 14px; margin-top: 10px; background: rgba(15, 23, 42, 0.95); color: #dbeafe; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Fiber Churn Intelligence — Technical Design Page</h1>
+      <p>This page is the technical design reference for the churn prediction solution: what the solution does, how the API is structured, what input values are required, why those values matter, and how the response is interpreted for business use.</p>
+      <div>
+        <span class="chip">HLD</span>
+        <span class="chip">LLD</span>
+        <span class="chip">FastAPI</span>
+        <span class="chip">Scikit-learn</span>
+        <span class="chip">Threshold Tuning</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>1. High-Level Design (HLD)</h2>
+        <h3>Purpose</h3>
+        <p>The project predicts whether a telecom fiber customer is likely to churn using behavior, pricing, usage, and service quality signals. It supports retention campaign decisions by exposing threshold-based business logic.</p>
+
+        <h3>Core components</h3>
+        <ul>
+          <li><strong>Dataset generation:</strong> creates realistic customer behavior patterns in <code>fiber_customers_realistic.csv</code>.</li>
+          <li><strong>Training pipeline:</strong> trains and compares models in <code>train_model.py</code>, saving the best model and feature columns.</li>
+          <li><strong>Prediction API:</strong> serves inference through FastAPI in <code>app/main.py</code>.</li>
+          <li><strong>Threshold tuning:</strong> stores campaign-oriented cutoffs in <code>threshold_tuning.json</code>.</li>
+        </ul>
+
+        <h3>System flow</h3>
+        <ol>
+          <li>Generate realistic customer records.</li>
+          <li>Engineer features such as tenure, pricing, outages, complaints, and contract signals.</li>
+          <li>Train and select the best model.</li>
+          <li>Persist the model and feature schema.</li>
+          <li>Expose <code>/predict</code> for real-time scoring and <code>/threshold-tuning</code> for threshold metadata.</li>
+        </ol>
+      </article>
+
+      <article class="card">
+        <h2>2. Low-Level Design (LLD)</h2>
+        <h3>API surface</h3>
+        <ul>
+          <li><strong>GET /health</strong> — checks service health and model availability.</li>
+          <li><strong>POST /predict</strong> — scores a customer and returns churn risk.</li>
+          <li><strong>GET /threshold-tuning</strong> — returns campaign threshold profiles.</li>
+          <li><strong>GET /feature-importance</strong> — returns feature contribution values from the trained model.</li>
+        </ul>
+
+        <h3>Model inputs</h3>
+        <p>The prediction service accepts one JSON object with the following mandatory fields. All values are required because the trained model uses them to build the feature vector.</p>
+      </article>
+    </section>
+
+    <section class="card" style="margin-top: 18px;">
+      <h2>3. Mandatory Input Contract for /predict</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Field</th>
+            <th>Type</th>
+            <th>Required</th>
+            <th>Why it is needed</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>plan</td><td>string</td><td>Yes</td><td>Plan name affects pricing and service behavior signals used for churn likelihood.</td></tr>
+          <tr><td>monthlyPrice</td><td>number</td><td>Yes</td><td>Price sensitivity is a strong churn driver; higher prices often increase churn risk.</td></tr>
+          <tr><td>tenureMonths</td><td>integer</td><td>Yes</td><td>Newer customers and long-standing customers have different retention patterns.</td></tr>
+          <tr><td>outages</td><td>integer</td><td>Yes</td><td>Frequent service interruptions increase dissatisfaction and churn risk.</td></tr>
+          <tr><td>complaints</td><td>integer</td><td>Yes</td><td>Complaint volume is a direct indicator of customer dissatisfaction.</td></tr>
+          <tr><td>supportCalls</td><td>integer</td><td>Yes</td><td>Support interaction frequency helps capture service friction and risk.</td></tr>
+          <tr><td>latePayments</td><td>integer</td><td>Yes</td><td>Billing behavior often correlates with churn, especially for account instability.</td></tr>
+          <tr><td>competitorAvailable</td><td>integer (0 or 1)</td><td>Yes</td><td>Shows whether a competing provider is available and may trigger churn.</td></tr>
+          <tr><td>monthlyContract</td><td>integer (0 or 1)</td><td>Yes</td><td>Contract type influences customer stickiness and pricing pressure.</td></tr>
+          <tr><td>speedMbps</td><td>integer</td><td>Yes</td><td>Speeds influence customer satisfaction and perceived value of the service.</td></tr>
+          <tr><td>avgMonthlyUsageGb</td><td>integer</td><td>Yes</td><td>Usage patterns help capture customer engagement and dependency on service.</td></tr>
+          <tr><td>recentPlanChange</td><td>integer (0 or 1)</td><td>Yes</td><td>Recent plan changes are a strong signal for customer dissatisfaction or price sensitivity.</td></tr>
+          <tr><td>contractRenewalDue</td><td>integer (0 or 1)</td><td>Yes</td><td>Customers near renewal can churn if they are unhappy or are evaluating alternatives.</td></tr>
+          <tr><td>region</td><td>string</td><td>Yes</td><td>Region captures local service quality, competition, and market behavior differences.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="noteBox">Validation note: the API expects real numbers for price and tenure, and binary flags as 0 or 1. Missing or malformed values will result in a 422 validation error.</div>
+    </section>
+
+    <section class="grid" style="margin-top: 18px;">
+      <article class="card">
+        <h2>4. Example Request Body</h2>
+        <pre>{
+  "plan": "Premium",
+  "monthlyPrice": 1499,
+  "tenureMonths": 12,
+  "outages": 2,
+  "complaints": 1,
+  "supportCalls": 3,
+  "latePayments": 0,
+  "competitorAvailable": 0,
+  "monthlyContract": 1,
+  "speedMbps": 500,
+  "avgMonthlyUsageGb": 180,
+  "recentPlanChange": 0,
+  "contractRenewalDue": 0,
+  "region": "North"
+}</pre>
+      </article>
+
+      <article class="card">
+        <h2>5. Query Parameters and Business Logic</h2>
+        <ul>
+          <li><strong>campaign</strong> (optional, default: <code>balanced</code>) — selects a threshold profile for business use.</li>
+          <li><strong>threshold</strong> (optional) — overrides the campaign threshold when a custom cutoff is needed.</li>
+        </ul>
+        <p>Available campaign profiles are defined in <code>threshold_tuning.json</code>:</p>
+        <ul>
+          <li><strong>retention_campaign</strong> — aggressive, good for outreach campaigns.</li>
+          <li><strong>balanced</strong> — default middle-ground threshold.</li>
+          <li><strong>conservative</strong> — stricter, fewer but higher-confidence alerts.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid" style="margin-top: 18px;">
+      <article class="card">
+        <h2>6. Response Shape</h2>
+        <p>The prediction endpoint returns a JSON object with the following fields:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Type</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>churn_prediction</td><td>integer (0/1)</td><td>Binary class prediction where 1 means predicted churn.</td></tr>
+            <tr><td>churn_probability</td><td>float</td><td>Probability of churn from the model, rounded to four decimals.</td></tr>
+            <tr><td>threshold_used</td><td>float</td><td>Threshold applied for classification.</td></tr>
+            <tr><td>campaign</td><td>string</td><td>Campaign profile used to choose the threshold.</td></tr>
+            <tr><td>risk</td><td>string</td><td>Business label: HIGH, MEDIUM, or LOW.</td></tr>
+            <tr><td>risk_reason</td><td>string</td><td>Human-readable explanation for the assigned risk.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="card">
+        <h2>7. Example Response</h2>
+        <pre>{
+  "churn_prediction": 1,
+  "churn_probability": 0.5294,
+  "threshold_used": 0.1,
+  "campaign": "retention_campaign",
+  "risk": "MEDIUM",
+  "risk_reason": "Moderate churn likelihood."
+}</pre>
+        <p class="muted">Interpretation: a higher probability means the customer is more likely to churn. The selected threshold decides how aggressive the retention campaign should be.</p>
+      </article>
+    </section>
+
+    <section class="card" style="margin-top: 18px;">
+      <h2>8. How churn is trained and what basis is used</h2>
+      <p>The training label is not guessed manually. The dataset generator creates a <strong>churn score</strong> from business signals and converts that score into a probability using a logistic function, then samples a binary label from that probability.</p>
+
+      <h3>Churn score formula used during dataset generation</h3>
+      <pre>churn_score =
+  0.12 * min(outages, 6)
++ 0.10 * min(complaints, 6)
++ 0.08 * min(supportCalls, 6)
++ 0.14 * min(latePayments, 5)
++ 0.15 * competitorAvailable
++ 0.10 * (tenureMonths < 6)
++ 0.08 * (monthlyPrice > 1200)
++ 0.12 * recentPlanChange
++ 0.10 * contractRenewalDue
++ 0.10 * (avgMonthlyUsageGb < 80)
++ 0.03 * (monthlyContract == 1 and tenureMonths < 12)
++ normal_noise(0, 0.15)</pre>
+
+      <p>That score is then converted to a churn probability with the sigmoid function:</p>
+      <pre>p(churn) = 1 / (1 + e^(-churn_score))</pre>
+      <p>The final label is generated as <code>churn = 1</code> when a random draw is below this probability, otherwise <code>0</code>. In other words, the training target is based on realistic telecom risk drivers rather than arbitrary labels.</p>
+
+      <h3>How the model learns</h3>
+      <ul>
+        <li>The model sees the customer features listed in the input contract and learns the relationship between those features and the generated churn label.</li>
+        <li>Training uses stratified train/test splits and compares models with <strong>RandomizedSearchCV</strong>.</li>
+        <li>The evaluation uses <strong>F1 score</strong>, <strong>ROC-AUC</strong>, and a combined score of <strong>0.7 * F1 + 0.3 * ROC-AUC</strong> to select the best model.</li>
+      </ul>
+
+      <h3>How the final churn decision is made at prediction time</h3>
+      <pre>probability = model.predict_proba(customer)[0][1]
+churn_prediction = 1 if probability >= threshold else 0</pre>
+      <p>The threshold is selected from campaign profiles such as <strong>retention_campaign</strong>, <strong>balanced</strong>, and <strong>conservative</strong>. These thresholds are tuned using precision, recall, and F1 score over candidate cutoffs from 0.1 to 0.9.</p>
+    </section>
+
+    <section class="card" style="margin-top: 18px;">
+      <h2>9. Why this design is useful</h2>
+      <ul>
+        <li>It gives a clear API contract for other services to call the prediction model safely.</li>
+        <li>It separates data science logic from business logic through threshold tuning profiles.</li>
+        <li>It supports usage in real retention campaigns, not only model experimentation.</li>
+        <li>It provides a simple way to integrate with applications, dashboards, or CRM workflows.</li>
+      </ul>
+      <p class="badge">Outcome: better targeting, reduced churn, and faster operational adoption.</p>
+    </section>
+  </main>
+</body>
+</html>
