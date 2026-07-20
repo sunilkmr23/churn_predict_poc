@@ -19,6 +19,20 @@ model = joblib.load(MODEL_PATH)
 cols = joblib.load(COLS_PATH)
 threshold_tuning = json.loads(THRESHOLD_PATH.read_text(encoding='utf-8')) if THRESHOLD_PATH.exists() else {}
 
+# Load customer dataset for API listing (used for UI customer picker)
+CUSTOMERS_CSV = BASE_DIR / 'fiber_customers_realistic.csv'
+if not CUSTOMERS_CSV.exists():
+    # fallback to alternate datasets if realistic file missing
+    alt = BASE_DIR / 'fiber_customers.csv'
+    CUSTOMERS_CSV = alt if alt.exists() else None
+
+_customers_df = None
+if CUSTOMERS_CSV and CUSTOMERS_CSV.exists():
+    try:
+        _customers_df = pd.read_csv(CUSTOMERS_CSV)
+    except Exception:
+        _customers_df = None
+
 
 class Customer(BaseModel):
     plan: str = Field(..., description='Fiber plan name')
@@ -98,3 +112,56 @@ def threshold_tuning_endpoint():
 @app.get('/feature-importance')
 def feature_importance():
     return dict(zip(cols, model.feature_importances_.tolist()))
+
+
+@app.post('/api/customer-feature-importance')
+def customer_feature_importance(c: Customer):
+    """Compute feature importance scores weighted by customer's specific values."""
+    try:
+        df = pd.DataFrame([c.model_dump()])
+        df['tenure_bucket'] = pd.cut(df['tenureMonths'], bins=[0, 6, 12, 24, 60], labels=['new', 'short', 'mid', 'long'], include_lowest=True)
+        df = pd.get_dummies(df, columns=['plan', 'region', 'tenure_bucket'], dtype=int)
+        df = df.reindex(columns=cols, fill_value=0)
+        
+        # Get feature importances
+        importances = model.feature_importances_
+        
+        # Weight importances by normalized feature values for this customer
+        features_values = df.iloc[0].values
+        normalized_values = (features_values - features_values.min()) / (features_values.max() - features_values.min() + 1e-6)
+        
+        # Combine: importance * feature_value gives customer-specific contribution
+        weighted_importance = importances * normalized_values
+        weighted_importance = weighted_importance / (weighted_importance.sum() + 1e-6)
+        
+        # Sort and get top features
+        result = dict(zip(cols, weighted_importance.tolist()))
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail='Feature importance computation failed') from exc
+
+
+@app.get('/api/customers')
+def customers_list(offset: int = 0, limit: int = 50):
+    """Return a paginated list of customers for the UI.
+
+    Query params:
+    - offset: zero-based index to start from
+    - limit: number of items to return (max 500)
+    """
+    if limit < 1:
+        limit = 1
+    if limit > 500:
+        limit = 500
+
+    if _customers_df is None:
+        raise HTTPException(status_code=404, detail='Customers dataset not found')
+
+    total = len(_customers_df)
+    start = max(0, int(offset))
+    end = min(total, start + int(limit))
+
+    rows = _customers_df.iloc[start:end].to_dict(orient='records')
+
+    # Return array (client supports both array and {items:[]})
+    return rows
