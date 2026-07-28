@@ -18,16 +18,48 @@ function readCustomers() {
 }
 
 app.get('/api/customers', (req, res) => {
-  try {
-    res.json(readCustomers());
-  } catch (error) {
-    res.status(500).json({ error: 'Unable to read customer data file.', details: error.message });
-  }
+  const offset = parseInt(req.query.offset || '0', 10) || 0;
+  const limit = parseInt(req.query.limit || '50', 10) || 50;
+
+  // Prefer FastAPI backend if available (supports pagination)
+  const backendUrl = `http://127.0.0.1:8000/api/customers?offset=${offset}&limit=${limit}`;
+  fetch(backendUrl)
+    .then((r) => {
+      if (!r.ok) throw new Error('Backend returned ' + r.status);
+      return r.json();
+    })
+    .then((data) => res.json(data))
+    .catch((err) => {
+      // Fallback: read local CSV and return a slice to avoid huge payloads
+      try {
+        const all = readCustomers();
+        const start = Math.max(0, offset);
+        const end = Math.min(all.length, start + Math.min(limit, 500));
+        const slice = all.slice(start, end);
+        res.json(slice);
+      } catch (error) {
+        res.status(500).json({ error: 'Unable to read customer data file.', details: error.message, backendError: err.message });
+      }
+    });
 });
 
 app.get('/api/feature-importance', async (req, res) => {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/feature-importance');
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(502).json({ error: 'FastAPI service is unavailable', details: error.message });
+  }
+});
+
+app.post('/api/customer-feature-importance', async (req, res) => {
   try {
-    const response = await fetch('http://127.0.0.1:8000/feature-importance');
+    const response = await fetch('http://127.0.0.1:8000/api/customer-feature-importance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
     const data = await response.json();
     res.json(data);
   } catch (error) {

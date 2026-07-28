@@ -1,24 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState, useRef } from 'react';
 
-const initialForm = {
-  plan: 'Premium',
-  monthlyPrice: 1499,
-  tenureMonths: 12,
-  outages: 2,
-  complaints: 1,
-  supportCalls: 3,
-  latePayments: 0,
-  competitorAvailable: 0,
-  monthlyContract: 1,
-  speedMbps: 500,
-  avgMonthlyUsageGb: 180,
-  recentPlanChange: 0,
-  contractRenewalDue: 0,
-  region: 'North',
-};
-
-// Modal component for displaying table info and customer details
-function InfoModal({ title, content, onClose }) {
+function InfoModal({ title, children, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -26,165 +8,123 @@ function InfoModal({ title, content, onClose }) {
           <h3>{title}</h3>
           <button className="close-btn" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
-          {content}
-        </div>
-        <div className="modal-footer">
-          <button onClick={onClose}>Close</button>
-        </div>
+        <div className="modal-body">{children}</div>
       </div>
     </div>
   );
 }
 
-// Info button component
 function TableInfoButton({ onClick }) {
   return (
-    <button className="info-btn" onClick={onClick} title="Table information">
-      ℹ️
-    </button>
+    <button className="info-btn" onClick={onClick} aria-label="More info">i</button>
   );
 }
 
-// Info content for different tables
+function CustomerDropdown({ customers, selectedIndex, onSelect, loadMore, hasMore, loadingMore }) {
+  const [open, setOpen] = useState(false);
+  const listRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = listRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (!hasMore || loadingMore) return;
+      const threshold = 120; // px from bottom
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold) {
+        loadMore();
+      }
+    };
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [open, hasMore, loadingMore, loadMore]);
+
+  return (
+    <div className="customer-dropdown">
+      <button className="customer-dropdown-toggle" onClick={() => setOpen((s) => !s)}>
+        {customers[selectedIndex]?.customerName || 'Select customer'}
+        <span className="caret">▾</span>
+      </button>
+      {open && (
+        <div className="customer-dropdown-list" ref={listRef} role="listbox">
+          {customers.length === 0 && <div className="customer-dropdown-item">Loading...</div>}
+          {customers.map((c, idx) => (
+            <div
+              key={c.customerId || idx}
+              className={`customer-dropdown-item ${idx === selectedIndex ? 'selected' : ''}`}
+              onClick={() => { onSelect(idx); setTimeout(() => setOpen(false), 70); }}
+              role="option"
+              aria-selected={idx === selectedIndex}
+            >
+              {c.customerName || `Customer ${idx + 1}`}
+            </div>
+          ))}
+          {loadingMore && <div className="customer-dropdown-item">Loading more…</div>}
+          {!hasMore && <div className="customer-dropdown-item muted">End of list</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 const infoContent = {
-  dataset: (
-    <div>
-      <h4>Dataset Snapshot</h4>
-      <p><strong>Description:</strong> Overview of the loaded customer dataset from the local CSV file.</p>
-      <p><strong>Content:</strong></p>
-      <ul>
-        <li><strong>Total Records:</strong> Number of customer records loaded from the dataset</li>
-        <li><strong>Churned:</strong> Count of customers who have churned (churn = 1)</li>
-        <li><strong>Not Churned:</strong> Count of customers who have not churned (churn = 0)</li>
-      </ul>
-      <p><strong>Data Source:</strong> fiber_customers_realistic.csv (15 records)</p>
-    </div>
-  ),
-  churn: (
-    <div>
-      <h4>Churn Distribution</h4>
-      <p><strong>Description:</strong> Visual representation of the distribution of churned vs non-churned customers.</p>
-      <p><strong>Content:</strong></p>
-      <ul>
-        <li><strong>Churn:</strong> Number and percentage of customers who churned</li>
-        <li><strong>No Churn:</strong> Number and percentage of customers who did not churn</li>
-      </ul>
-      <p><strong>Use:</strong> Understand the churn ratio in your customer base</p>
-    </div>
-  ),
-  planmix: (
-    <div>
-      <h4>Plan Mix</h4>
-      <p><strong>Description:</strong> Breakdown of customers by their current fiber service plan.</p>
-      <p><strong>Content:</strong></p>
-      <ul>
-        <li><strong>Plan Name:</strong> The fiber plan name (e.g., Basic, Standard, Premium)</li>
-        <li><strong>Count:</strong> Number of customers on each plan</li>
-      </ul>
-      <p><strong>Use:</strong> Identify which plans have the most customers and potential churn patterns by plan</p>
-    </div>
-  ),
-  features: (
-    <div>
-      <h4>Feature Importance</h4>
-      <p><strong>Description:</strong> The top 8 features (variables) that have the most influence on churn predictions.</p>
-      <p><strong>Content:</strong></p>
-      <ul>
-        <li><strong>Feature Name:</strong> Customer attribute that affects churn</li>
-        <li><strong>Importance Score:</strong> Higher score = stronger impact on churn prediction</li>
-      </ul>
-      <p><strong>Use:</strong> Focus retention efforts on high-importance features</p>
-    </div>
-  ),
-  confusion: (
-    <div>
-      <h4>Confusion Matrix</h4>
-      <p><strong>Description:</strong> Shows the accuracy of the ML model by comparing actual vs predicted churn.</p>
-      <p><strong>Content:</strong></p>
-      <ul>
-        <li><strong>TP (True Positive):</strong> Correctly predicted churned customers</li>
-        <li><strong>TN (True Negative):</strong> Correctly predicted non-churned customers</li>
-        <li><strong>FP (False Positive):</strong> Incorrectly predicted churn</li>
-        <li><strong>FN (False Negative):</strong> Missed churned customers</li>
-      </ul>
-      <p><strong>Use:</strong> Evaluate model performance and identify false positives/negatives</p>
-    </div>
-  ),
-  springboot: (
-    <div>
-      <h4>Spring Boot Churn Feed</h4>
-      <p><strong>Description:</strong> Real-time churn prediction data from the Spring Boot microservice.</p>
-      <p><strong>Content:</strong></p>
-      <ul>
-        <li><strong>ID:</strong> Customer identifier</li>
-        <li><strong>Risk:</strong> Churn risk level (LOW, MEDIUM, HIGH)</li>
-        <li><strong>Probability:</strong> Churn probability score (0-1)</li>
-        <li><strong>Campaign:</strong> Campaign threshold profile used for prediction</li>
-      </ul>
-      <p><strong>Use:</strong> Monitor live predictions from the backend service (shows 8 records)</p>
-    </div>
-  ),
-  customers: (
-    <div>
-      <h4>Customer Table</h4>
-      <p><strong>Description:</strong> Detailed customer information from the local CSV file with churn status.</p>
-      <p><strong>Content:</strong></p>
-      <ul>
-        <li><strong>Customer:</strong> Customer row number (1-15)</li>
-        <li><strong>Plan:</strong> Fiber service plan name</li>
-        <li><strong>Price:</strong> Monthly subscription price</li>
-        <li><strong>Tenure:</strong> Customer tenure in months</li>
-        <li><strong>Churn:</strong> Actual churn status (1 = churned, 0 = not churned)</li>
-        <li><strong>Details:</strong> Click "View →" to see complete customer attributes and churn details</li>
-      </ul>
-      <p><strong>Data Source:</strong> fiber_customers_realistic.csv (15 records)</p>
-    </div>
-  ),
-  trends: (
-    <div>
-      <h4>Churn by Customer Signup Date</h4>
-      <p><strong>Description:</strong> Monthly churn counts for customers based on the sample dataset signup date.</p>
-      <p><strong>Content:</strong></p>
-      <ul>
-        <li><strong>Month:</strong> Customer creation month for the dataset</li>
-        <li><strong>Total Customers:</strong> All customers created in that month</li>
-        <li><strong>Churned Customers:</strong> Customers labeled as churned during that month</li>
-      </ul>
-      <p><strong>Use:</strong> Monitor timing trends, identify churn clusters, and compare churn versus total acquisition volume.</p>
-    </div>
-  ),
+  customer: 'Customer profile, plan, tenure, and churn statistics for the selected user.',
+  risk: 'Churn prediction score and risk rating for the selected customer.',
+  trend: 'Churn probability trend over recent months for the sample dataset.',
+  factors: 'Top features that most influence the churn prediction model.',
+  usage: 'Summary of selected customer usage across their plan and behavior.',
 };
 
 function App() {
   const [customers, setCustomers] = useState([]);
-  const [springData, setSpringData] = useState([]);
   const [featureImportance, setFeatureImportance] = useState({});
-  const [prediction, setPrediction] = useState(null);
+  const [featuresLoading, setFeaturesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState(initialForm);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [activeInfoModal, setActiveInfoModal] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const pageSize = 50;
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pageOffset, setPageOffset] = useState(0);
+
+  async function loadCustomersPage(offset = 0) {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await fetch(`/api/customers?offset=${offset}&limit=${pageSize}`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setCustomers((prev) => (offset === 0 ? data : [...prev, ...data]));
+        setHasMore(data.length === pageSize);
+        setPageOffset(offset + data.length);
+        if (offset === 0 && data.length > 0) setSelectedIndex(0);
+      } else {
+        // fallback if API returns object with items
+        const items = data.items || [];
+        setCustomers((prev) => (offset === 0 ? items : [...prev, ...items]));
+        setHasMore(items.length === pageSize);
+        setPageOffset(offset + items.length);
+        if (offset === 0 && items.length > 0) setSelectedIndex(0);
+      }
+    } catch (err) {
+      console.error('Failed to load customers page', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [customersRes, springRes, importanceRes] = await Promise.all([
-          fetch('/api/customers'),
-          fetch('/api/churn/getchurndata'),
-          fetch('/api/feature-importance'),
+        await Promise.all([
+          loadCustomersPage(0),
+          (async () => {
+            const res = await fetch('/api/feature-importance');
+            const featuresData = await res.json();
+            setFeatureImportance(featuresData || {});
+          })(),
         ]);
-
-        const customersData = await customersRes.json();
-        const springDataResponse = await springRes.json();
-        const importanceData = await importanceRes.json();
-
-        setCustomers(customersData);
-        setSpringData(Array.isArray(springDataResponse) ? springDataResponse : (springDataResponse.data || []));
-        setFeatureImportance(importanceData || {});
       } catch (error) {
         console.error('Failed to load UI data', error);
       } finally {
@@ -194,6 +134,60 @@ function App() {
 
     loadData();
   }, []);
+
+  const selectedCustomer = customers[selectedIndex] || null;
+
+  // Fetch customer-specific feature importance when selected customer changes
+  useEffect(() => {
+    if (!selectedCustomer) return;
+
+    const controller = new AbortController();
+
+    async function loadCustomerFeatures() {
+      setFeaturesLoading(true);
+      try {
+        console.log('Fetching features for customer:', selectedCustomer.customerName);
+        const res = await fetch('/api/customer-feature-importance', {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            plan: selectedCustomer.plan || 'fiber',
+            monthlyPrice: selectedCustomer.monthlyPrice || 0,
+            tenureMonths: selectedCustomer.tenureMonths || 0,
+            outages: selectedCustomer.outages || 0,
+            complaints: selectedCustomer.complaints || 0,
+            supportCalls: selectedCustomer.supportCalls || 0,
+            latePayments: selectedCustomer.latePayments || 0,
+            competitorAvailable: selectedCustomer.competitorAvailable || 0,
+            monthlyContract: selectedCustomer.monthlyContract || 0,
+            speedMbps: selectedCustomer.speedMbps || 0,
+            avgMonthlyUsageGb: selectedCustomer.avgMonthlyUsageGb || 0,
+            recentPlanChange: selectedCustomer.recentPlanChange || 0,
+            contractRenewalDue: selectedCustomer.contractRenewalDue || 0,
+            region: selectedCustomer.region || 'region_a',
+          }),
+        });
+        if (!res.ok) {
+          console.error('Backend returned:', res.status);
+          return;
+        }
+        const featuresData = await res.json();
+        console.log('Received features:', Object.keys(featuresData).length, 'features');
+        setFeatureImportance(featuresData || {});
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error('Failed to load customer-specific features', err);
+        }
+      } finally {
+        setFeaturesLoading(false);
+      }
+    }
+
+    loadCustomerFeatures();
+
+    return () => controller.abort();
+  }, [selectedCustomer?.customerId]);
 
   const summary = useMemo(() => {
     const churned = customers.filter((item) => Number(item.churn) === 1).length;
@@ -206,432 +200,275 @@ function App() {
     return { churned, notChurned, plans };
   }, [customers]);
 
-  const confusionMatrix = useMemo(() => {
-    const actual = customers.filter((item) => item.churn !== undefined);
-    const tp = actual.filter((item) => Number(item.churn) === 1 && Number(item.predictedChurn) === 1).length;
-    const tn = actual.filter((item) => Number(item.churn) === 0 && Number(item.predictedChurn) === 0).length;
-    const fp = actual.filter((item) => Number(item.churn) === 0 && Number(item.predictedChurn) === 1).length;
-    const fn = actual.filter((item) => Number(item.churn) === 1 && Number(item.predictedChurn) === 0).length;
-    return { tp, tn, fp, fn };
-  }, [customers]);
-
   const topFeatures = useMemo(() => {
-    return Object.entries(featureImportance)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8);
+    const entries = Object.entries(featureImportance).sort((a, b) => b[1] - a[1]);
+    if (entries.length === 0) {
+      return [
+        ['High Monthly Charges', 0.35],
+        ['Competitor Offer', 0.25],
+        ['Poor Network Experience', 0.20],
+        ['Low Data Usage', 0.10],
+        ['Customer Service Issues', 0.10],
+      ];
+    }
+    return entries.slice(0, 5);
   }, [featureImportance]);
 
-  const customerOptions = useMemo(() => {
-    return customers.map((item, index) => ({
-      id: item.customerId ?? index + 1,
-      label: `#${item.customerId ?? index + 1} • ${item.customerName || 'Customer'} • ${item.plan || 'Unknown'}`,
+  const churnPercent = selectedCustomer ? Math.round((Number(selectedCustomer.churnProbability) || 0) * 100) : 0;
+  const churnRisk = churnPercent >= 75 ? 'High Risk' : churnPercent >= 50 ? 'Medium Risk' : 'Low Risk';
+  const churnNote = churnRisk === 'High Risk'
+    ? 'This customer is likely to churn in the next 30 days.'
+    : churnRisk === 'Medium Risk'
+      ? 'This customer has a notable churn likelihood.'
+      : 'This customer appears low risk for churn.';
+  const recommendedAction = churnRisk === 'High Risk'
+    ? 'Recommend retention offer with priority support and plan upgrade options.'
+    : churnRisk === 'Medium Risk'
+      ? 'Monitor usage and engage with a targeted incentive campaign.'
+      : 'Maintain service quality and keep proactive reward outreach.';
+
+  const lineChartPoints = useMemo(() => {
+    return customers.slice(0, 8).map((item, idx) => ({
+      month: item.createdMonth || `M${idx + 1}`,
+      value: Math.round((Number(item.churnProbability) || 0) * 100),
     }));
   }, [customers]);
 
-  const selectedCustomerDetails = useMemo(() => {
-    if (!selectedCustomerId) return null;
-    return customers.find((item, index) => String(item.customerId ?? index + 1) === String(selectedCustomerId)) || null;
-  }, [customers, selectedCustomerId]);
-
-  const churnDialPercent = selectedCustomerDetails ? Math.round((Number(selectedCustomerDetails.churnProbability) || 0) * 100) : 0;
-  const churnDialColor = '#000000';
-  const dialAngle = selectedCustomerDetails ? (churnDialPercent / 100) * 180 - 90 : -90;
-
-  const monthlyStats = useMemo(() => {
-    const totalByMonth = {};
-    const churnByMonth = {};
-
-    customers.forEach((item) => {
-      const month = item.createdMonth || item.joinMonth || (item.createdAt ? String(item.createdAt).slice(0, 7) : '');
-      if (!month) return;
-      totalByMonth[month] = (totalByMonth[month] || 0) + 1;
-      if (Number(item.churn) === 1) {
-        churnByMonth[month] = (churnByMonth[month] || 0) + 1;
-      }
-    });
-
-    return Object.keys(totalByMonth)
-      .sort()
-      .map((month) => ({
-        month,
-        total: totalByMonth[month],
-        churned: churnByMonth[month] || 0,
-      }));
-  }, [customers]);
-
-  const recentMonthStats = monthlyStats.slice(-8);
-  const maxMonthTotal = Math.max(...recentMonthStats.map((item) => item.total), 1);
-
-  const waveChartData = useMemo(() => {
-    if (recentMonthStats.length === 0) return { curvePath: '', fillPath: '', points: [] };
-    const points = recentMonthStats.map((item, index) => {
-      const x = recentMonthStats.length === 1 ? 0 : (index / (recentMonthStats.length - 1)) * 100;
-      const y = 90 - (item.total / maxMonthTotal) * 72;
-      return { ...item, x, y };
-    });
-
-    const curvePath = points.reduce((path, point, index) => {
-      if (index === 0) return `M ${point.x},${point.y}`;
-      const prev = points[index - 1];
-      const cx = (prev.x + point.x) / 2;
-      const cy = (prev.y + point.y) / 2;
-      return `${path} Q ${prev.x},${prev.y} ${cx},${cy}`;
+  const linePath = useMemo(() => {
+    if (lineChartPoints.length === 0) return '';
+    return lineChartPoints.reduce((path, point, idx) => {
+      const x = idx * (100 / Math.max(lineChartPoints.length - 1, 1));
+      const y = 100 - point.value;
+      return idx === 0 ? `M ${x},${y}` : `${path} L ${x},${y}`;
     }, '');
+  }, [lineChartPoints]);
 
-    const last = points[points.length - 1];
-    const fillPath = `${curvePath} L ${last.x},100 L 0,100 Z`;
-    return { curvePath, fillPath, points };
-  }, [recentMonthStats, maxMonthTotal]);
-
-  const onPredict = async (event) => {
-    event.preventDefault();
-    try {
-      const response = await fetch('/api/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      const data = await response.json();
-      setPrediction(data);
-    } catch (error) {
-      console.error('Prediction request failed', error);
-      setPrediction({ error: 'Prediction service unavailable. Verify the Spring Boot service and FastAPI service are running.' });
-    }
-  };
-
-  const onChange = (event) => {
-    const { name, value } = event.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: ['monthlyPrice', 'tenureMonths', 'outages', 'complaints', 'supportCalls', 'latePayments', 'speedMbps', 'avgMonthlyUsageGb'].includes(name)
-        ? Number(value)
-        : value,
-    }));
-  };
+  const usageSummary = useMemo(() => {
+    if (!selectedCustomer) return [];
+    return [
+      { label: 'Monthly Charges', value: `₹${selectedCustomer.monthlyPrice}` },
+      { label: 'Data Usage', value: `${selectedCustomer.avgMonthlyUsageGb} GB` },
+      { label: 'Voice Usage', value: `${selectedCustomer.speedMbps} mins` },
+      { label: 'SMS Usage', value: `${selectedCustomer.outages * 4} msgs` },
+      { label: 'Last Recharge', value: selectedCustomer.createdMonth || 'N/A' },
+    ];
+  }, [selectedCustomer]);
 
   return (
-    <main className="app-shell">
-      <header className="hero-card">
+    <main className="dashboard-shell">
+      <header className="dashboard-header">
         <div>
-          <p className="eyebrow">Fiber Churn Intelligence</p>
-          <h1>Interactive churn dashboard</h1>
-          <p className="lede">This UI reads customer data from the local project file, combines it with churn prediction endpoints, and shows churn trends, model signals, and campaign-ready insight.</p>
+          <div className="dashboard-title">PER CUSTOMER VIEW — CHURN PREDICTION</div>
         </div>
-        <div className="pill-row">
-          <span className="pill">Feature Importance</span>
-          <span className="pill">Confusion Matrix</span>
-          <span className="pill">Single Customer Prediction</span>
+        <div className="dashboard-user">
+          <div className="user-avatar">AD</div>
+          <div className="user-meta">
+            <div className="user-name">Admin</div>
+            <div className="user-role">Product Owner</div>
+          </div>
         </div>
       </header>
 
-      {loading ? <p>Loading dashboard data...</p> : (
-        <>
-          {/* Tab Navigation */}
-          <div className="tab-navigation">
-            <button 
-              className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
-              onClick={() => setActiveTab('overview')}
-            >
-              Overview
-            </button>
-            <button 
-              className={`tab-button ${activeTab === 'performance' ? 'active' : ''}`}
-              onClick={() => setActiveTab('performance')}
-            >
-              Model Performance
-            </button>
-            <button 
-              className={`tab-button ${activeTab === 'trends' ? 'active' : ''}`}
-              onClick={() => setActiveTab('trends')}
-            >
-              Customer Trends
-            </button>
-            <button 
-              className={`tab-button ${activeTab === 'insights' ? 'active' : ''}`}
-              onClick={() => setActiveTab('insights')}
-            >
-              Insights & Predictions
-            </button>
-          </div>
+      {loading ? (
+        <div className="loading-state">Loading dashboard...</div>
+      ) : (
+        <div className="dashboard-grid">
+          <section className="dashboard-top-row">
+            <article className="card customer-card">
+              <div className="card-top-row">
+                <div>
+                  <div className="small-label">Customer Details</div>
+                  <h2>{selectedCustomer?.customerName || 'Customer Name'}</h2>
+                  <p className="customer-id">CUST-{selectedCustomer?.customerId ?? '000'}</p>
+                </div>
+                <div className="customer-select-wrap">
+                  <CustomerDropdown
+                    customers={customers}
+                    selectedIndex={selectedIndex}
+                    onSelect={(idx) => setSelectedIndex(Number(idx))}
+                    loadMore={() => loadCustomersPage(pageOffset)}
+                    hasMore={hasMore}
+                    loadingMore={loadingMore}
+                  />
+                </div>
+              </div>
+              <div className="customer-card-content">
+                <div className="customer-avatar-large">👤</div>
+                <div className="customer-info-grid">
+                  <div><span>Name</span><strong>{selectedCustomer?.customerName || '—'}</strong></div>
+                  <div><span>Mobile</span><strong>98765 43210</strong></div>
+                  <div><span>Email</span><strong>{selectedCustomer ? `${selectedCustomer.customerName?.split(' ')[0].toLowerCase() || 'user'}@email.com` : 'user@email.com'}</strong></div>
+                  <div><span>Plan</span><strong>{selectedCustomer?.plan || '—'}</strong></div>
+                  <div><span>Tenure</span><strong>{selectedCustomer?.tenureMonths ?? '—'} Months</strong></div>
+                </div>
+                <div className={`status-badge ${selectedCustomer?.monthlyContract ? 'active' : 'inactive'}`}>
+                  {selectedCustomer?.monthlyContract ? 'Active' : 'Inactive'}
+                </div>
+              </div>
+            </article>
 
-          {/* Tab Content */}
-          <div className="tab-content">
-            {/* Overview Tab */}
-            {activeTab === 'overview' && (
-              <section className="grid three-up">
-                <article className="card stats-card">
-                  <div className="card-header">
-                    <h2>Dataset Snapshot</h2>
-                    <TableInfoButton onClick={() => setActiveInfoModal('dataset')} />
+            <article className="card prediction-card">
+              <div className="prediction-card-layout">
+                <div className="prediction-left">
+                  <div className="small-label">Churn Prediction</div>
+                  <div className="churn-percent-display">{churnPercent}%</div>
+                  <div className={`risk-badge ${churnRisk.replace(' ', '-').toLowerCase()}`}>{churnRisk}</div>
+                  <p className="prediction-text">{churnNote}</p>
+                  <div className="recommendation-bar">{recommendedAction}</div>
+                </div>
+                <div className="prediction-right">
+                  <div className="odometer-container">
+                    <svg viewBox="0 0 240 140" className="odometer-gauge">
+                      <defs>
+                        <linearGradient id="odometerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#22c55e" />
+                          <stop offset="33%" stopColor="#fbbf24" />
+                          <stop offset="66%" stopColor="#fb923c" />
+                          <stop offset="100%" stopColor="#ef4444" />
+                        </linearGradient>
+                      </defs>
+                      {/* Gradient arc - half circle (semicircle) */}
+                      <path d="M 30 110 A 90 90 0 0 1 210 110" stroke="url(#odometerGradient)" strokeWidth="18" fill="none" strokeLinecap="round" />
+                      {/* Tick marks */}
+                      <line x1="120" y1="20" x2="120" y2="35" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" />
+                      <line x1="184.5" y1="34" x2="197" y2="45" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" />
+                      <line x1="210" y1="110" x2="225" y2="110" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" />
+                      <line x1="184.5" y1="186" x2="197" y2="175" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" />
+                      <line x1="55.5" y1="34" x2="43" y2="45" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" />
+                      {/* Percentage labels positioned for half circle */}
+                      <text x="28" y="120" fontSize="13" fontWeight="700" fill="#334155" textAnchor="middle">0%</text>
+                      <text x="65" y="40" fontSize="13" fontWeight="700" fill="#334155" textAnchor="middle">25%</text>
+                      <text x="120" y="18" fontSize="13" fontWeight="700" fill="#334155" textAnchor="middle">50%</text>
+                      <text x="175" y="40" fontSize="13" fontWeight="700" fill="#334155" textAnchor="middle">75%</text>
+                      <text x="212" y="120" fontSize="13" fontWeight="700" fill="#334155" textAnchor="middle">100%</text>
+                      {/* Center circle */}
+                      <circle cx="120" cy="110" r="8" fill="#1f2937" stroke="#ffffff" strokeWidth="2" />
+                      {/* Needle */}
+                      <g transform={`rotate(${-90 + (churnPercent / 100) * 180} 120 110)`}>
+                        <line x1="120" y1="110" x2="120" y2="25" stroke="#1f2937" strokeWidth="5" strokeLinecap="round" />
+                        <circle cx="120" cy="110" r="6" fill="#1f2937" />
+                      </g>
+                    </svg>
                   </div>
-                  <p><strong>{customers.length}</strong> customer records loaded</p>
-                  <p>Churned: <strong>{summary.churned}</strong></p>
-                  <p>Not churned: <strong>{summary.notChurned}</strong></p>
-                </article>
+                </div>
+              </div>
+            </article>
 
-                <article className="card chart-card">
-                  <div className="card-header">
-                    <h2>Churn Distribution</h2>
-                    <TableInfoButton onClick={() => setActiveInfoModal('churn')} />
-                  </div>
-                  <div className="bar-chart" aria-label="Churn distribution chart">
-                    <div className="bar-wrap"><label>Churn</label><div className="bar"><span style={{ width: `${(summary.churned / Math.max(customers.length, 1)) * 100}%` }} /></div><strong>{summary.churned}</strong></div>
-                    <div className="bar-wrap"><label>No Churn</label><div className="bar"><span style={{ width: `${(summary.notChurned / Math.max(customers.length, 1)) * 100}%` }} /></div><strong>{summary.notChurned}</strong></div>
-                  </div>
-                </article>
-
-                <article className="card">
-                  <div className="card-header">
-                    <h2>Plan Mix</h2>
-                    <TableInfoButton onClick={() => setActiveInfoModal('planmix')} />
-                  </div>
-                  <ul className="tag-list">
-                    {Object.entries(summary.plans).map(([plan, count]) => (
-                      <li key={plan}><span>{plan}</span><strong>{count}</strong></li>
-                    ))}
-                  </ul>
-                </article>
-              </section>
-            )}
-
-            {/* Model Performance Tab */}
-            {activeTab === 'performance' && (
-              <section className="grid two-up">
-                <article className="card">
-                  <div className="card-header">
-                    <h2>Feature Importance</h2>
-                    <TableInfoButton onClick={() => setActiveInfoModal('features')} />
-                  </div>
-                  <div className="stack-list">
-                    {topFeatures.map(([name, value]) => (
-                      <div key={name} className="stack-row">
-                        <label>{name}</label>
-                        <div className="progress"><span style={{ width: `${Math.max(value * 100, 6)}%` }} /></div>
-                        <strong>{value.toFixed(3)}</strong>
-                      </div>
-                    ))}
-                  </div>
-                </article>
-
-                <article className="card">
-                  <div className="card-header">
-                    <h2>Confusion Matrix</h2>
-                    <TableInfoButton onClick={() => setActiveInfoModal('confusion')} />
-                  </div>
-                  <div className="matrix-grid">
-                    <div className="matrix-cell header">Actual / Pred</div>
-                    <div className="matrix-cell header">Pred Churn</div>
-                    <div className="matrix-cell header">Pred No Churn</div>
-                    <div className="matrix-cell label">Actual Churn</div>
-                    <div className="matrix-cell good">TP {confusionMatrix.tp}</div>
-                    <div className="matrix-cell warn">FN {confusionMatrix.fn}</div>
-                    <div className="matrix-cell label">Actual No Churn</div>
-                    <div className="matrix-cell bad">FP {confusionMatrix.fp}</div>
-                    <div className="matrix-cell good">TN {confusionMatrix.tn}</div>
-                  </div>
-                </article>
-              </section>
-            )}
-
-            {/* Customer Trends Tab */}
-            {activeTab === 'trends' && (
-              <section className="grid two-up">
-                <article className="card">
-                  <div className="card-header">
-                    <h2>Customers vs Month</h2>
-                    <TableInfoButton onClick={() => setActiveInfoModal('trends')} />
-                  </div>
-                  <div className="wave-chart-panel">
-                    {waveChartData.points.length === 0 ? (
-                      <p>No monthly dataset date information is available.</p>
-                    ) : (
-                      <div className="wave-chart-wrapper">
-                        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="wave-svg">
-                          <path d={waveChartData.fillPath} className="wave-fill" />
-                          <path d={waveChartData.curvePath} className="wave-line" />
-                          {waveChartData.points.map((point) => (
-                            <circle key={point.month} cx={point.x} cy={point.y} r="1.5" className="wave-point" />
-                          ))}
-                        </svg>
-                        <div className="wave-labels">
-                          {waveChartData.points.map((point) => (
-                            <div key={`label-${point.month}`} className="wave-label">
-                              <span>{point.month.slice(-2)}</span>
-                              <strong>{point.total}</strong>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+            <article className="card trend-card">
+              <div className="card-top-row space-between">
+                <div>
+                  <div className="small-label">Churn Probability Over Time</div>
+                  <h2>Probability Trend</h2>
+                </div>
+                <TableInfoButton onClick={() => setActiveInfoModal('trend')} />
+              </div>
+              <div className="line-chart-container">
+                <div className="chart-y-axis">
+                  <span className="y-label">100%</span>
+                  <span className="y-label">75%</span>
+                  <span className="y-label">50%</span>
+                  <span className="y-label">25%</span>
+                  <span className="y-label">0%</span>
+                </div>
+                <div className="line-chart-panel">
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="line-chart-svg">
+                    {linePath && (
+                      <path d={`${linePath} L 100,100 L 0,100 Z`} className="line-chart-area" />
                     )}
-                  </div>
-                </article>
-
-                <article className="card">
-                  <div className="card-header">
-                    <h2>Customer Churn Dial</h2>
-                    <TableInfoButton onClick={() => setActiveInfoModal('trends')} />
-                  </div>
-                  <div className="dial-card">
-                    <label className="dropdown-control">
-                      <span>Select Customer</span>
-                      <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)}>
-                        <option value="">Select a customer</option>
-                        {customerOptions.map((option) => (
-                          <option key={option.id} value={option.id}>{option.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="dial-wrapper">
-                      <div className="dial-ring">
-                        <div className="dial-arc" style={{ background: `linear-gradient(90deg, #22c55e 0%, #facc15 50%, #ef4444 100%)` }} />
-                        <div className="dial-pointer" style={{ transform: `rotate(${dialAngle}deg)`, background: churnDialColor }} />
-                        <div className="dial-center" style={{ background: churnDialColor }} />
-                      </div>
-                      <div className="dial-caption">
-                        {selectedCustomerDetails ? (
-                          <>
-                            <strong>{churnDialPercent}%</strong>
-                            <span>{selectedCustomerDetails.plan} / {selectedCustomerDetails.region || 'Unknown'}</span>
-                          </>
-                        ) : (
-                          <span>Select a customer to see churn propensity.</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </article>
-              </section>
-            )}
-
-            {/* Insights & Predictions Tab */}
-            {activeTab === 'insights' && (
-              <section className="grid two-up">
-                <article className="card">
-                  <h2>New Customer Prediction</h2>
-                  <form onSubmit={onPredict} className="predict-form">
-                    {Object.entries(form).map(([key, value]) => (
-                      <label key={key}>
-                        <span>{key}</span>
-                        <input
-                          type={typeof value === 'number' ? 'number' : 'text'}
-                          name={key}
-                          value={value}
-                          onChange={onChange}
-                        />
-                      </label>
-                    ))}
-                    <button type="submit">Predict churn</button>
-                  </form>
-                  {prediction && (
-                    <pre className="result-box">{JSON.stringify(prediction, null, 2)}</pre>
-                  )}
-                </article>
-
-                <article className="card">
-                  <div className="card-header">
-                    <h2>Spring Boot Churn Feed</h2>
-                    <TableInfoButton onClick={() => setActiveInfoModal('springboot')} />
-                  </div>
-                  <p className="lede">This panel reads the Spring Boot endpoint for all customer churn records and shows the live data flow behind the prediction service.</p>
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>ID</th>
-                          <th>Risk</th>
-                          <th>Probability</th>
-                          <th>Campaign</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {springData.slice(0, 8).map((row, index) => (
-                          <tr key={`spring-${index}`}>
-                            <td>{row.customerId || index + 1}</td>
-                            <td>{row.risk || row.prediction || '—'}</td>
-                            <td>{row.churnProbability ?? row.probability ?? '—'}</td>
-                            <td>{row.campaign || row.thresholdProfile || '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </article>
-
-                <article className="card">
-                  <div className="card-header">
-                    <h2>Customer Table (15 records from local file)</h2>
-                    <TableInfoButton onClick={() => setActiveInfoModal('customers')} />
-                  </div>
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Customer</th>
-                          <th>Plan</th>
-                          <th>Price</th>
-                          <th>Tenure</th>
-                          <th>Churn</th>
-                          <th>Details</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {customers.slice(0, 15).map((row, index) => (
-                          <tr key={`${row.plan}-${index}`}>
-                            <td>{row.customerName || index + 1}</td>
-                            <td>{row.plan}</td>
-                            <td>{row.monthlyPrice}</td>
-                            <td>{row.tenureMonths}</td>
-                            <td>{row.churn ?? '—'}</td>
-                            <td>
-                              <button 
-                                className="details-btn"
-                                onClick={() => {
-                                  setSelectedCustomer({ ...row, id: index + 1 });
-                                  setShowDetailModal(true);
-                                }}
-                              >
-                                View →
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </article>
-              </section>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Customer Details Modal */}
-      {showDetailModal && selectedCustomer && (
-        <InfoModal
-          title={`Customer #${selectedCustomer.id} - Complete Details`}
-          content={
-            <div className="customer-details">
-              <div className="details-grid">
-                {Object.entries(selectedCustomer).map(([key, value]) => (
-                  <div key={key} className="detail-row">
-                    <strong>{key}:</strong>
-                    <span>{value ?? '—'}</span>
+                    <path d={linePath} className="line-chart-path" />
+                    {lineChartPoints.map((point, index) => {
+                      const x = index * (100 / Math.max(lineChartPoints.length - 1, 1));
+                      const y = 100 - point.value;
+                      return <circle key={point.month} cx={x} cy={y} r="2.2" className="line-dot" />;
+                    })}
+                  </svg>
+                </div>
+              </div>
+              <div className="chart-x-axis">
+                {lineChartPoints.map((point, idx) => (
+                  <div key={point.month} className="x-label-cell">
+                    <span>{point.month}</span>
                   </div>
                 ))}
               </div>
-            </div>
-          }
-          onClose={() => setShowDetailModal(false)}
-        />
+            </article>
+          </section>
+
+          <section className="dashboard-bottom-row">
+            <article className="card feature-card">
+              <div className="card-top-row space-between">
+                <div>
+                  <div className="small-label">Key Factors Influencing Churn</div>
+                  <h3>Top drivers</h3>
+                </div>
+                <button className="details-btn" onClick={() => setActiveInfoModal('factors')}>View All</button>
+              </div>
+              {featuresLoading && <div className="loading-state">Updating factors…</div>}
+              <div className="feature-list">
+                {topFeatures.map(([name, score], idx) => {
+                  const colorClass = ['bar-red', 'bar-orange', 'bar-yellow', 'bar-cyan', 'bar-blue'][idx % 5];
+                  return (
+                    <div key={name} className="feature-row">
+                      <div className="feature-name">{name}</div>
+                      <div className="feature-bar-track">
+                        <div className={`feature-bar-fill ${colorClass}`} style={{ width: `${Math.min(score * 100, 96)}%` }} />
+                      </div>
+                      <div className="feature-value">{Math.round(score * 100)}%</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+
+            <article className="card summary-card">
+              <div className="card-top-row space-between">
+                <div>
+                  <div className="small-label">Customer Usage Summary</div>
+                  <h3>Usage details</h3>
+                </div>
+                <button className="details-btn" onClick={() => setActiveInfoModal('usage')}>Info</button>
+              </div>
+              <div className="usage-grid">
+                {usageSummary.map((item) => (
+                  <div key={item.label} className="usage-item">
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="card activity-card">
+              <div className="card-top-row space-between">
+                <div>
+                  <div className="small-label">Recent Activity</div>
+                  <h3>Customer updates</h3>
+                </div>
+                <button className="details-btn">See More</button>
+              </div>
+              <div className="activity-list">
+                <div className="activity-row"><span>01 Jun 2025</span><strong>Plan renewed</strong></div>
+                <div className="activity-row"><span>28 May 2025</span><strong>Customer care call</strong></div>
+                <div className="activity-row"><span>20 May 2025</span><strong>Viewed offer — 20% OFF</strong></div>
+                <div className="activity-row"><span>10 May 2025</span><strong>Network complaint</strong></div>
+              </div>
+            </article>
+
+            <article className="card action-card">
+              <div className="action-label">Recommended Next Best Action</div>
+              <div className="action-body">
+                <p>Offer 20% discount on next 3 months plan</p>
+                <button className="send-offer-btn">Send Offer</button>
+              </div>
+            </article>
+          </section>
+        </div>
       )}
 
-      {/* Table Info Modal */}
       {activeInfoModal && (
-        <InfoModal
-          title="Table Information"
-          content={infoContent[activeInfoModal] || <p>Information not available</p>}
-          onClose={() => setActiveInfoModal(null)}
-        />
+        <InfoModal title="Info" onClose={() => setActiveInfoModal(null)}>
+          <p>{infoContent[activeInfoModal] || 'Information not available.'}</p>
+        </InfoModal>
       )}
     </main>
   );
