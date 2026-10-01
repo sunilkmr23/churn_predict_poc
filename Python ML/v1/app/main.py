@@ -50,6 +50,61 @@ class Customer(BaseModel):
     contractRenewalDue: int = Field(..., ge=0, le=1, description='Contract renewal due (0/1)')
     region: str = Field(..., description='Customer region')
 
+
+class CustomerRecord(Customer):
+    customerId: str | None = Field(default=None, description='External customer identifier from source system')
+    customerName: str | None = Field(default=None, description='Customer display name if available')
+
+
+CUSTOMER_FEATURE_FIELDS = (
+    'plan', 'monthlyPrice', 'tenureMonths', 'outages', 'complaints', 'supportCalls',
+    'latePayments', 'competitorAvailable', 'monthlyContract', 'speedMbps',
+    'avgMonthlyUsageGb', 'recentPlanChange', 'contractRenewalDue', 'region',
+)
+
+
+def _prepare_features(values: dict) -> pd.DataFrame:
+    df = pd.DataFrame([values])
+    df['service_stress'] = df['outages'] + df['complaints'] + df['supportCalls']
+    df['billing_risk'] = df['latePayments'] * df['monthlyPrice'] / 100.0
+    df['price_per_mbps'] = df['monthlyPrice'] / df['speedMbps'].replace(0, 1)
+    df['usage_drop'] = (df['avgMonthlyUsageGb'] < 80).astype(int)
+    df['tenure_bucket'] = pd.cut(
+        df['tenureMonths'],
+        bins=[0, 6, 12, 24, 60],
+        labels=['new', 'short', 'mid', 'long'],
+        include_lowest=True,
+    )
+    df = pd.get_dummies(df, columns=['plan', 'region', 'tenure_bucket'], dtype=int)
+    return df.reindex(columns=cols, fill_value=0)
+
+
+def _build_reference_customer() -> dict:
+    defaults = {
+        'plan': 'Basic', 'monthlyPrice': 699, 'tenureMonths': 24, 'outages': 2,
+        'complaints': 1, 'supportCalls': 1, 'latePayments': 0,
+        'competitorAvailable': 0, 'monthlyContract': 1, 'speedMbps': 100,
+        'avgMonthlyUsageGb': 100, 'recentPlanChange': 0,
+        'contractRenewalDue': 0, 'region': 'North',
+    }
+    if _customers_df is None:
+        return defaults
+
+    reference = defaults.copy()
+    for field in CUSTOMER_FEATURE_FIELDS:
+        if field not in _customers_df.columns or _customers_df[field].dropna().empty:
+            continue
+        values = _customers_df[field].dropna()
+        if field in ('plan', 'region'):
+            reference[field] = values.mode().iloc[0]
+        else:
+            reference[field] = float(values.median())
+    return reference
+
+
+REFERENCE_CUSTOMER = _build_reference_customer()
+
+
 @app.get('/', response_class=HTMLResponse)
 def root():
     return """
@@ -77,10 +132,7 @@ def health():
 @app.post('/predict')
 def predict(c: Customer, threshold: float | None = None, campaign: str = 'balanced'):
     try:
-        df = pd.DataFrame([c.model_dump()])
-        df['tenure_bucket'] = pd.cut(df['tenureMonths'], bins=[0, 6, 12, 24, 60], labels=['new', 'short', 'mid', 'long'], include_lowest=True)
-        df = pd.get_dummies(df, columns=['plan', 'region', 'tenure_bucket'], dtype=int)
-        df = df.reindex(columns=cols, fill_value=0)
+        df = _prepare_features(c.model_dump())
 
         prob = float(model.predict_proba(df)[0][1])
 
@@ -104,6 +156,16 @@ def predict(c: Customer, threshold: float | None = None, campaign: str = 'balanc
         raise HTTPException(status_code=500, detail='Prediction failed') from exc
 
 
+@app.post('/predict-from-record')
+def predict_from_record(c: CustomerRecord, threshold: float | None = None, campaign: str = 'balanced'):
+    """Accepts external customer record attributes and returns the churn prediction."""
+    try:
+        payload = Customer.model_validate(c.model_dump(exclude={'customerId', 'customerName'}))
+        return predict(payload, threshold=threshold, campaign=campaign)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail='Prediction from record failed') from exc
+
+
 @app.get('/threshold-tuning')
 def threshold_tuning_endpoint():
     return threshold_tuning
@@ -116,27 +178,22 @@ def feature_importance():
 
 @app.post('/api/customer-feature-importance')
 def customer_feature_importance(c: Customer):
-    """Compute feature importance scores weighted by customer's specific values."""
+    """Return signed probability impacts relative to a dataset-typical customer."""
     try:
-        df = pd.DataFrame([c.model_dump()])
-        df['tenure_bucket'] = pd.cut(df['tenureMonths'], bins=[0, 6, 12, 24, 60], labels=['new', 'short', 'mid', 'long'], include_lowest=True)
-        df = pd.get_dummies(df, columns=['plan', 'region', 'tenure_bucket'], dtype=int)
-        df = df.reindex(columns=cols, fill_value=0)
-        
-        # Get feature importances
-        importances = model.feature_importances_
-        
-        # Weight importances by normalized feature values for this customer
-        features_values = df.iloc[0].values
-        normalized_values = (features_values - features_values.min()) / (features_values.max() - features_values.min() + 1e-6)
-        
-        # Combine: importance * feature_value gives customer-specific contribution
-        weighted_importance = importances * normalized_values
-        weighted_importance = weighted_importance / (weighted_importance.sum() + 1e-6)
-        
-        # Sort and get top features
-        result = dict(zip(cols, weighted_importance.tolist()))
-        return result
+        customer_values = c.model_dump()
+        customer_probability = float(model.predict_proba(_prepare_features(customer_values))[0][1])
+        impacts = {}
+
+        for field in CUSTOMER_FEATURE_FIELDS:
+            counterfactual = customer_values.copy()
+            counterfactual[field] = REFERENCE_CUSTOMER[field]
+            if counterfactual[field] == customer_values[field]:
+                impacts[field] = 0.0
+                continue
+            baseline_probability = float(model.predict_proba(_prepare_features(counterfactual))[0][1])
+            impacts[field] = customer_probability - baseline_probability
+
+        return {field: round(impact, 4) for field, impact in impacts.items()}
     except Exception as exc:
         raise HTTPException(status_code=500, detail='Feature importance computation failed') from exc
 

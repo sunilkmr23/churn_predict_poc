@@ -1,5 +1,7 @@
 package com.example.churn.model;
 
+import java.util.Map;
+
 public class PredictionResponse {
 
     private int churn_prediction;
@@ -8,6 +10,15 @@ public class PredictionResponse {
     private String campaign;
     private String risk;
     private String risk_reason;
+    private Map<String, Object> customer;
+
+    public Map<String, Object> getCustomer() {
+        return customer;
+    }
+
+    public void setCustomer(Map<String, Object> customer) {
+        this.customer = customer;
+    }
 
     public String getCampaign() {
         return campaign;

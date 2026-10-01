@@ -1,6 +1,5 @@
 package com.example.churn.service;
 
-import com.example.churn.model.Customer;
 import com.example.churn.model.PredictionRequest;
 import com.example.churn.model.PredictionResponse;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,11 +13,16 @@ public class PredictionService {
     RestTemplate restTemplate;
 
     public PredictionResponse predictChurn(PredictionRequest request) {
-        PredictionResponse response =
-                restTemplate.postForObject(
-                        "http://localhost:8000/predict",
-                        request,
-                        PredictionResponse.class);
-        return response;
+        return restTemplate.postForObject(
+                "http://localhost:8000/predict",
+                request,
+                PredictionResponse.class);
+    }
+
+    public PredictionResponse predictFromRemoteRecord(PredictionRequest request) {
+        return restTemplate.postForObject(
+                "http://localhost:8000/predict-from-record",
+                request,
+                PredictionResponse.class);
     }
 }

@@ -2,6 +2,8 @@ package com.example.churn.service;
 
 import com.example.churn.model.Customer;
 import com.opencsv.CSVReader;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -11,7 +13,12 @@ import java.util.*;
 @Service
 public class CustomerService {
 
+    private final JdbcTemplate jdbcTemplate;
     private List<Customer> customers = new ArrayList<>();
+
+    public CustomerService(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     @PostConstruct
     public void loadData() {
@@ -32,6 +39,20 @@ public class CustomerService {
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    public Map<String, Object> getCustomerByIdFromRemoteDb(String customerId) {
+        String sql = "SELECT " +
+                "CustomerID, CustomerName, Plan, MonthlyPrice, TenureMonths, Outages, Complaints, SupportCalls, " +
+                "LatePayments, CompetitorAvailable, MonthlyContract, SpeedMBPS, AvgMonthlyUsageGb, RecentPlanChange, " +
+                "ContractRenewalDue, Region " +
+                "FROM R_INT_CA_CHURN_PARAMS WHERE CustomerID = ?";
+
+        try {
+            return jdbcTemplate.queryForMap(sql, customerId);
+        } catch (EmptyResultDataAccessException exception) {
+            return null;
         }
     }
 

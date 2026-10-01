@@ -67,11 +67,26 @@ function CustomerDropdown({ customers, selectedIndex, onSelect, loadMore, hasMor
   );
 }
 
+function getCustomerIdFromUrl() {
+  const url = new URL(window.location.href);
+  const queryId = url.searchParams.get('customerId');
+  if (queryId?.trim()) return queryId.trim();
+
+  const pathMatch = url.pathname.match(/^\/customer\/([^/]+)\/?$/);
+  if (!pathMatch) return '';
+
+  try {
+    return decodeURIComponent(pathMatch[1]);
+  } catch {
+    return pathMatch[1];
+  }
+}
+
 
 const infoContent = {
   customer: 'Customer profile, plan, tenure, and churn statistics for the selected user.',
   risk: 'Churn prediction score and risk rating for the selected customer.',
-  trend: 'Churn probability trend over recent months for the sample dataset.',
+  trend: 'Average model churn probability grouped by month.',
   factors: 'Top features that most influence the churn prediction model.',
   usage: 'Summary of selected customer usage across their plan and behavior.',
 };
@@ -83,48 +98,21 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [activeInfoModal, setActiveInfoModal] = useState(null);
+  const [externalPrediction, setExternalPrediction] = useState(null);
+  const initialCustomerId = useRef(null);
+  if (initialCustomerId.current === null) {
+    initialCustomerId.current = getCustomerIdFromUrl();
+  }
+  const [predictionLoading, setPredictionLoading] = useState(false);
+  const [predictionError, setPredictionError] = useState('');
   const pageSize = 50;
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [pageOffset, setPageOffset] = useState(0);
-
-  async function loadCustomersPage(offset = 0) {
-    if (loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const res = await fetch(`/api/customers?offset=${offset}&limit=${pageSize}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setCustomers((prev) => (offset === 0 ? data : [...prev, ...data]));
-        setHasMore(data.length === pageSize);
-        setPageOffset(offset + data.length);
-        if (offset === 0 && data.length > 0) setSelectedIndex(0);
-      } else {
-        // fallback if API returns object with items
-        const items = data.items || [];
-        setCustomers((prev) => (offset === 0 ? items : [...prev, ...items]));
-        setHasMore(items.length === pageSize);
-        setPageOffset(offset + items.length);
-        if (offset === 0 && items.length > 0) setSelectedIndex(0);
-      }
-    } catch (err) {
-      console.error('Failed to load customers page', err);
-    } finally {
-      setLoadingMore(false);
-    }
-  }
 
   useEffect(() => {
     async function loadData() {
       try {
-        await Promise.all([
-          loadCustomersPage(0),
-          (async () => {
-            const res = await fetch('/api/feature-importance');
-            const featuresData = await res.json();
-            setFeatureImportance(featuresData || {});
-          })(),
-        ]);
+        await loadCustomersPage(0);
       } catch (error) {
         console.error('Failed to load UI data', error);
       } finally {
@@ -136,36 +124,65 @@ function App() {
   }, []);
 
   const selectedCustomer = customers[selectedIndex] || null;
+  const dashboardCustomer = useMemo(() => {
+    const row = externalPrediction?.customer;
+    if (!row) return initialCustomerId.current ? null : selectedCustomer;
+
+    const getValue = (field) => {
+      const key = Object.keys(row).find((candidate) => candidate.toLowerCase() === field.toLowerCase());
+      return key ? row[key] : null;
+    };
+
+    return {
+      customerId: getValue('customerId') || initialCustomerId.current,
+      customerName: getValue('customerName'),
+      plan: getValue('plan'),
+      monthlyPrice: getValue('monthlyPrice'),
+      tenureMonths: getValue('tenureMonths'),
+      outages: getValue('outages'),
+      complaints: getValue('complaints'),
+      supportCalls: getValue('supportCalls'),
+      latePayments: getValue('latePayments'),
+      competitorAvailable: getValue('competitorAvailable'),
+      monthlyContract: getValue('monthlyContract'),
+      speedMbps: getValue('speedMbps'),
+      avgMonthlyUsageGb: getValue('avgMonthlyUsageGb'),
+      recentPlanChange: getValue('recentPlanChange'),
+      contractRenewalDue: getValue('contractRenewalDue'),
+      region: getValue('region'),
+      churnProbability: externalPrediction.churn_probability,
+    };
+  }, [externalPrediction, selectedCustomer]);
 
   // Fetch customer-specific feature importance when selected customer changes
   useEffect(() => {
-    if (!selectedCustomer) return;
+    if (!dashboardCustomer) return;
 
     const controller = new AbortController();
 
     async function loadCustomerFeatures() {
       setFeaturesLoading(true);
       try {
-        console.log('Fetching features for customer:', selectedCustomer.customerName);
+        console.log('Fetching features for customer:', dashboardCustomer.customerName);
         const res = await fetch('/api/customer-feature-importance', {
           method: 'POST',
           signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            plan: selectedCustomer.plan || 'fiber',
-            monthlyPrice: selectedCustomer.monthlyPrice || 0,
-            tenureMonths: selectedCustomer.tenureMonths || 0,
-            outages: selectedCustomer.outages || 0,
-            complaints: selectedCustomer.complaints || 0,
-            supportCalls: selectedCustomer.supportCalls || 0,
-            latePayments: selectedCustomer.latePayments || 0,
-            competitorAvailable: selectedCustomer.competitorAvailable || 0,
-            monthlyContract: selectedCustomer.monthlyContract || 0,
-            speedMbps: selectedCustomer.speedMbps || 0,
-            avgMonthlyUsageGb: selectedCustomer.avgMonthlyUsageGb || 0,
-            recentPlanChange: selectedCustomer.recentPlanChange || 0,
-            contractRenewalDue: selectedCustomer.contractRenewalDue || 0,
-            region: selectedCustomer.region || 'region_a',
+            plan: dashboardCustomer.plan || 'fiber',
+            monthlyPrice: dashboardCustomer.monthlyPrice || 0,
+            tenureMonths: dashboardCustomer.tenureMonths || 0,
+            outages: dashboardCustomer.outages || 0,
+            complaints: dashboardCustomer.complaints || 0,
+            supportCalls: dashboardCustomer.supportCalls || 0,
+            latePayments: dashboardCustomer.latePayments || 0,
+            competitorAvailable: dashboardCustomer.competitorAvailable || 0,
+            monthlyContract: dashboardCustomer.monthlyContract || 0,
+            speedMbps: dashboardCustomer.speedMbps || 0,
+            avgMonthlyUsageGb: dashboardCustomer.avgMonthlyUsageGb || 0,
+            recentPlanChange: dashboardCustomer.recentPlanChange || 0,
+            contractRenewalDue: dashboardCustomer.contractRenewalDue || 0,
+            region: dashboardCustomer.region || 'region_a',
           }),
         });
         if (!res.ok) {
@@ -187,7 +204,7 @@ function App() {
     loadCustomerFeatures();
 
     return () => controller.abort();
-  }, [selectedCustomer?.customerId]);
+  }, [dashboardCustomer]);
 
   const summary = useMemo(() => {
     const churned = customers.filter((item) => Number(item.churn) === 1).length;
@@ -201,26 +218,21 @@ function App() {
   }, [customers]);
 
   const topFeatures = useMemo(() => {
-    const entries = Object.entries(featureImportance).sort((a, b) => b[1] - a[1]);
-    if (entries.length === 0) {
-      return [
-        ['High Monthly Charges', 0.35],
-        ['Competitor Offer', 0.25],
-        ['Poor Network Experience', 0.20],
-        ['Low Data Usage', 0.10],
-        ['Customer Service Issues', 0.10],
-      ];
-    }
-    return entries.slice(0, 5);
+    return Object.entries(featureImportance)
+      .filter(([, score]) => Number.isFinite(Number(score)))
+      .sort((a, b) => Math.abs(Number(b[1])) - Math.abs(Number(a[1])))
+      .slice(0, 5);
   }, [featureImportance]);
+  const maxFeatureImpact = Math.max(0, ...topFeatures.map(([, score]) => Math.abs(Number(score))));
 
-  const churnPercent = selectedCustomer ? Math.round((Number(selectedCustomer.churnProbability) || 0) * 100) : 0;
-  const churnRisk = churnPercent >= 75 ? 'High Risk' : churnPercent >= 50 ? 'Medium Risk' : 'Low Risk';
-  const churnNote = churnRisk === 'High Risk'
+  const churnPercent = dashboardCustomer ? Math.round((Number(dashboardCustomer.churnProbability) || 0) * 100) : 0;
+  const apiRisk = String(externalPrediction?.risk || '').toUpperCase();
+  const churnRisk = apiRisk === 'HIGH' ? 'High Risk' : apiRisk === 'MEDIUM' ? 'Medium Risk' : apiRisk === 'LOW' ? 'Low Risk' : churnPercent >= 75 ? 'High Risk' : churnPercent >= 50 ? 'Medium Risk' : 'Low Risk';
+  const churnNote = externalPrediction?.risk_reason || (churnRisk === 'High Risk'
     ? 'This customer is likely to churn in the next 30 days.'
     : churnRisk === 'Medium Risk'
       ? 'This customer has a notable churn likelihood.'
-      : 'This customer appears low risk for churn.';
+      : 'This customer appears low risk for churn.');
   const recommendedAction = churnRisk === 'High Risk'
     ? 'Recommend retention offer with priority support and plan upgrade options.'
     : churnRisk === 'Medium Risk'
@@ -228,10 +240,31 @@ function App() {
       : 'Maintain service quality and keep proactive reward outreach.';
 
   const lineChartPoints = useMemo(() => {
-    return customers.slice(0, 8).map((item, idx) => ({
-      month: item.createdMonth || `M${idx + 1}`,
-      value: Math.round((Number(item.churnProbability) || 0) * 100),
-    }));
+    const monthTotals = new Map();
+    customers.forEach((customer) => {
+      const month = String(customer.createdMonth || '');
+      const probability = Number(customer.churnProbability);
+      if (!/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(probability)) return;
+
+      const totals = monthTotals.get(month) || { probability: 0, count: 0 };
+      totals.probability += probability;
+      totals.count += 1;
+      monthTotals.set(month, totals);
+    });
+
+    return [...monthTotals.entries()]
+      .sort(([firstMonth], [secondMonth]) => firstMonth.localeCompare(secondMonth))
+      .slice(-8)
+      .map(([month, totals]) => {
+        const [year, monthNumber] = month.split('-').map(Number);
+        const date = new Date(year, monthNumber - 1, 1);
+        return {
+          month,
+          monthLabel: new Intl.DateTimeFormat('en', { month: 'short' }).format(date),
+          year: String(year),
+          value: Math.round((totals.probability / totals.count) * 100),
+        };
+      });
   }, [customers]);
 
   const linePath = useMemo(() => {
@@ -244,15 +277,73 @@ function App() {
   }, [lineChartPoints]);
 
   const usageSummary = useMemo(() => {
-    if (!selectedCustomer) return [];
+    if (!dashboardCustomer) return [];
+    if (externalPrediction) {
+      return [
+        { label: 'Monthly Price', value: `₹${dashboardCustomer.monthlyPrice ?? '—'}` },
+        { label: 'Data Usage', value: `${dashboardCustomer.avgMonthlyUsageGb ?? '—'} GB` },
+        { label: 'Speed', value: `${dashboardCustomer.speedMbps ?? '—'} Mbps` },
+        { label: 'Outages', value: dashboardCustomer.outages ?? '—' },
+        { label: 'Complaints', value: dashboardCustomer.complaints ?? '—' },
+        { label: 'Support Calls', value: dashboardCustomer.supportCalls ?? '—' },
+        { label: 'Late Payments', value: dashboardCustomer.latePayments ?? '—' },
+        { label: 'Region', value: dashboardCustomer.region || '—' },
+      ];
+    }
     return [
-      { label: 'Monthly Charges', value: `₹${selectedCustomer.monthlyPrice}` },
-      { label: 'Data Usage', value: `${selectedCustomer.avgMonthlyUsageGb} GB` },
-      { label: 'Voice Usage', value: `${selectedCustomer.speedMbps} mins` },
-      { label: 'SMS Usage', value: `${selectedCustomer.outages * 4} msgs` },
-      { label: 'Last Recharge', value: selectedCustomer.createdMonth || 'N/A' },
+      { label: 'Monthly Charges', value: `₹${dashboardCustomer.monthlyPrice}` },
+      { label: 'Data Usage', value: `${dashboardCustomer.avgMonthlyUsageGb} GB` },
+      { label: 'Voice Usage', value: `${dashboardCustomer.speedMbps} mins` },
+      { label: 'SMS Usage', value: `${dashboardCustomer.outages * 4} msgs` },
+      { label: 'Last Recharge', value: dashboardCustomer.createdMonth || 'N/A' },
     ];
-  }, [selectedCustomer]);
+  }, [dashboardCustomer, externalPrediction]);
+
+  async function requestPrediction(customerId) {
+    if (!customerId) {
+      setPredictionError('Enter a customer ID.');
+      setExternalPrediction(null);
+      return;
+    }
+
+    setPredictionLoading(true);
+    setPredictionError('');
+    setExternalPrediction(null);
+    try {
+      const res = await fetch(`/api/churn/predict-by-id/${encodeURIComponent(customerId)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || `Prediction failed (${res.status}).`);
+      }
+      if (!data.customer) {
+        throw new Error('Prediction succeeded, but the Adapter did not return the customer record.');
+      }
+      setExternalPrediction(data);
+    } catch (err) {
+      setPredictionError(err.message || 'Unable to get a prediction for this customer.');
+    } finally {
+      setPredictionLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const customerId = initialCustomerId.current;
+    if (!customerId) return;
+    window.history.replaceState({}, '', `/customer/${encodeURIComponent(customerId)}`);
+    requestPrediction(customerId);
+  }, []);
+
+  function formatFieldLabel(field) {
+    return field
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]/g, ' ')
+      .toLowerCase()
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  const isContractActive = ['1', 'Y', 'YES', 'TRUE', 'ACTIVE'].includes(
+    String(dashboardCustomer?.monthlyContract ?? '').toUpperCase(),
+  );
 
   return (
     <main className="dashboard-shell">
@@ -269,6 +360,11 @@ function App() {
         </div>
       </header>
 
+      {!loading && predictionLoading && (
+        <div className="dashboard-message" role="status">Loading customer {initialCustomerId.current} and calculating churn...</div>
+      )}
+      {!loading && predictionError && <div className="dashboard-message error" role="alert">{predictionError}</div>}
+
       {loading ? (
         <div className="loading-state">Loading dashboard...</div>
       ) : (
@@ -278,10 +374,10 @@ function App() {
               <div className="card-top-row">
                 <div>
                   <div className="small-label">Customer Details</div>
-                  <h2>{selectedCustomer?.customerName || 'Customer Name'}</h2>
-                  <p className="customer-id">CUST-{selectedCustomer?.customerId ?? '000'}</p>
+                  <h2>{dashboardCustomer?.customerName || 'Customer Name'}</h2>
+                  <p className="customer-id">CUST-{dashboardCustomer?.customerId ?? '000'}</p>
                 </div>
-                <div className="customer-select-wrap">
+                {!externalPrediction && <div className="customer-select-wrap">
                   <CustomerDropdown
                     customers={customers}
                     selectedIndex={selectedIndex}
@@ -290,19 +386,19 @@ function App() {
                     hasMore={hasMore}
                     loadingMore={loadingMore}
                   />
-                </div>
+                </div>}
               </div>
               <div className="customer-card-content">
                 <div className="customer-avatar-large">👤</div>
                 <div className="customer-info-grid">
-                  <div><span>Name</span><strong>{selectedCustomer?.customerName || '—'}</strong></div>
-                  <div><span>Mobile</span><strong>98765 43210</strong></div>
-                  <div><span>Email</span><strong>{selectedCustomer ? `${selectedCustomer.customerName?.split(' ')[0].toLowerCase() || 'user'}@email.com` : 'user@email.com'}</strong></div>
-                  <div><span>Plan</span><strong>{selectedCustomer?.plan || '—'}</strong></div>
-                  <div><span>Tenure</span><strong>{selectedCustomer?.tenureMonths ?? '—'} Months</strong></div>
+                  <div><span>Customer ID</span><strong>{dashboardCustomer?.customerId || '—'}</strong></div>
+                  <div><span>Plan</span><strong>{dashboardCustomer?.plan || '—'}</strong></div>
+                  <div><span>Monthly Price</span><strong>{dashboardCustomer?.monthlyPrice ?? '—'}</strong></div>
+                  <div><span>Tenure</span><strong>{dashboardCustomer?.tenureMonths ?? '—'} Months</strong></div>
+                  <div><span>Region</span><strong>{dashboardCustomer?.region || '—'}</strong></div>
                 </div>
-                <div className={`status-badge ${selectedCustomer?.monthlyContract ? 'active' : 'inactive'}`}>
-                  {selectedCustomer?.monthlyContract ? 'Active' : 'Inactive'}
+                <div className={`status-badge ${isContractActive ? 'active' : 'inactive'}`}>
+                  {isContractActive ? 'Active' : 'Inactive'}
                 </div>
               </div>
             </article>
@@ -357,7 +453,7 @@ function App() {
             <article className="card trend-card">
               <div className="card-top-row space-between">
                 <div>
-                  <div className="small-label">Churn Probability Over Time</div>
+                  <div className="small-label">Average Churn Probability by Month</div>
                   <h2>Probability Trend</h2>
                 </div>
                 <TableInfoButton onClick={() => setActiveInfoModal('trend')} />
@@ -384,10 +480,11 @@ function App() {
                   </svg>
                 </div>
               </div>
-              <div className="chart-x-axis">
+              <div className="chart-x-axis" style={{ gridTemplateColumns: `repeat(${Math.max(lineChartPoints.length, 1)}, minmax(0, 1fr))` }}>
                 {lineChartPoints.map((point, idx) => (
                   <div key={point.month} className="x-label-cell">
-                    <span>{point.month}</span>
+                    <span className="x-label-month">{point.monthLabel}</span>
+                    <span className="x-label-year">{point.year}</span>
                   </div>
                 ))}
               </div>
@@ -405,15 +502,19 @@ function App() {
               </div>
               {featuresLoading && <div className="loading-state">Updating factors…</div>}
               <div className="feature-list">
-                {topFeatures.map(([name, score], idx) => {
-                  const colorClass = ['bar-red', 'bar-orange', 'bar-yellow', 'bar-cyan', 'bar-blue'][idx % 5];
+                {!featuresLoading && topFeatures.length === 0 && <div className="feature-empty-state">No customer-specific driver results available.</div>}
+                {topFeatures.map(([name, score]) => {
+                  const impact = Number(score);
+                  const colorClass = impact >= 0 ? 'bar-red' : 'bar-cyan';
                   return (
                     <div key={name} className="feature-row">
-                      <div className="feature-name">{name}</div>
+                      <div className="feature-name">{formatFieldLabel(name)}</div>
                       <div className="feature-bar-track">
-                        <div className={`feature-bar-fill ${colorClass}`} style={{ width: `${Math.min(score * 100, 96)}%` }} />
+                        <div className={`feature-bar-fill ${colorClass}`} style={{ width: `${maxFeatureImpact ? Math.max((Math.abs(impact) / maxFeatureImpact) * 96, 2) : 0}%` }} />
                       </div>
-                      <div className="feature-value">{Math.round(score * 100)}%</div>
+                      <div className="feature-value" title={impact >= 0 ? 'Raises churn probability versus the reference customer' : 'Lowers churn probability versus the reference customer'}>
+                        {impact > 0 ? '+' : ''}{(impact * 100).toFixed(1)} pp
+                      </div>
                     </div>
                   );
                 })}
@@ -457,8 +558,7 @@ function App() {
             <article className="card action-card">
               <div className="action-label">Recommended Next Best Action</div>
               <div className="action-body">
-                <p>Offer 20% discount on next 3 months plan</p>
-                <button className="send-offer-btn">Send Offer</button>
+                <p>{recommendedAction}</p>
               </div>
             </article>
           </section>

@@ -69,7 +69,7 @@ app.post('/api/customer-feature-importance', async (req, res) => {
 
 app.get('/api/churn/getchurndata', async (req, res) => {
   try {
-    const response = await fetch('http://localhost:3333/api/churn/getchurndata');
+    const response = await fetch('http://localhost:3335/api/churn/getchurndata');
     const data = await response.json();
     res.json(data);
   } catch (error) {
@@ -77,9 +77,27 @@ app.get('/api/churn/getchurndata', async (req, res) => {
   }
 });
 
+app.get('/api/churn/predict-by-id/:customerId', async (req, res) => {
+  try {
+    const customerId = req.params.customerId?.trim();
+    if (!customerId) {
+      return res.status(400).json({ error: 'customerId is required' });
+    }
+
+    const response = await fetch(`http://localhost:3335/api/churn/predict-by-id/${encodeURIComponent(customerId)}`);
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+    return res.json(data);
+  } catch (error) {
+    return res.status(502).json({ error: 'Spring Boot prediction service is unavailable', details: error.message });
+  }
+});
+
 app.post('/api/predict', async (req, res) => {
   try {
-    const response = await fetch('http://localhost:3333/api/churn/predict-by-customer', {
+    const response = await fetch('http://localhost:3335/api/churn/predict-by-customer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req.body),
