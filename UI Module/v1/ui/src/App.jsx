@@ -108,6 +108,34 @@ function App() {
   const pageSize = 50;
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [pageOffset, setPageOffset] = useState(0);
+
+  async function loadCustomersPage(offset) {
+    if (offset === 0) {
+      setCustomers([]);
+      setSelectedIndex(0);
+    } else {
+      setLoadingMore(true);
+    }
+    try {
+      const res = await fetch(`/api/customers?offset=${offset}&limit=${pageSize}`);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch customers: ${res.status}`);
+      }
+      const data = await res.json();
+      const items = Array.isArray(data) ? data : (data.items || []);
+      setCustomers((prev) => (offset === 0 ? items : [...prev, ...items]));
+      setHasMore(items.length === pageSize);
+      setPageOffset(offset + items.length);
+    } catch (error) {
+      console.error('Failed to load customers', error);
+      setHasMore(false);
+    } finally {
+      if (offset > 0) {
+        setLoadingMore(false);
+      }
+    }
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -160,6 +188,10 @@ function App() {
 
     const controller = new AbortController();
 
+    function hasNumericScores(data) {
+      return data && typeof data === 'object' && Object.entries(data).some(([, score]) => Number.isFinite(Number(score)));
+    }
+
     async function loadCustomerFeatures() {
       setFeaturesLoading(true);
       try {
@@ -185,16 +217,28 @@ function App() {
             region: dashboardCustomer.region || 'region_a',
           }),
         });
-        if (!res.ok) {
-          console.error('Backend returned:', res.status);
-          return;
+        if (res.ok) {
+          const featuresData = await res.json();
+          if (hasNumericScores(featuresData)) {
+            console.log('Received customer-specific features:', Object.keys(featuresData).length, 'features');
+            setFeatureImportance(featuresData);
+            return;
+          }
+          console.warn('Customer-specific feature response had no numeric scores, falling back to global importance');
+        } else {
+          console.warn('Customer-specific feature importance failed:', res.status, 'falling back to global importance');
         }
-        const featuresData = await res.json();
-        console.log('Received features:', Object.keys(featuresData).length, 'features');
-        setFeatureImportance(featuresData || {});
+
+        const globalRes = await fetch('/api/feature-importance', { signal: controller.signal });
+        if (!globalRes.ok) {
+          throw new Error(`Global feature importance failed: ${globalRes.status}`);
+        }
+        const globalData = await globalRes.json();
+        console.log('Received global features:', Object.keys(globalData).length, 'features');
+        setFeatureImportance(hasNumericScores(globalData) ? globalData : {});
       } catch (err) {
         if (err.name !== 'AbortError') {
-          console.error('Failed to load customer-specific features', err);
+          console.error('Failed to load feature importance', err);
         }
       } finally {
         setFeaturesLoading(false);

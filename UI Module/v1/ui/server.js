@@ -8,6 +8,7 @@ const app = express();
 const port = 4000;
 const BASE_DIR = path.resolve(__dirname, '..');
 const CSV_PATH = path.join(BASE_DIR, 'fiber_customers_realistic.csv');
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8000';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
@@ -22,7 +23,7 @@ app.get('/api/customers', (req, res) => {
   const limit = parseInt(req.query.limit || '50', 10) || 50;
 
   // Prefer FastAPI backend if available (supports pagination)
-  const backendUrl = `http://127.0.0.1:8000/api/customers?offset=${offset}&limit=${limit}`;
+  const backendUrl = `${ML_SERVICE_URL}/api/customers?offset=${offset}&limit=${limit}`;
   fetch(backendUrl)
     .then((r) => {
       if (!r.ok) throw new Error('Backend returned ' + r.status);
@@ -44,10 +45,13 @@ app.get('/api/customers', (req, res) => {
 });
 
 app.get('/api/feature-importance', async (req, res) => {
-    try {
-      const response = await fetch('http://127.0.0.1:8000/feature-importance');
+  try {
+    const response = await fetch(`${ML_SERVICE_URL}/feature-importance`);
     const data = await response.json();
-    res.json(data);
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+    return res.json(data);
   } catch (error) {
     res.status(502).json({ error: 'FastAPI service is unavailable', details: error.message });
   }
@@ -55,13 +59,16 @@ app.get('/api/feature-importance', async (req, res) => {
 
 app.post('/api/customer-feature-importance', async (req, res) => {
   try {
-    const response = await fetch('http://127.0.0.1:8000/api/customer-feature-importance', {
+    const response = await fetch(`${ML_SERVICE_URL}/api/customer-feature-importance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req.body),
     });
     const data = await response.json();
-    res.json(data);
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+    return res.json(data);
   } catch (error) {
     res.status(502).json({ error: 'FastAPI service is unavailable', details: error.message });
   }

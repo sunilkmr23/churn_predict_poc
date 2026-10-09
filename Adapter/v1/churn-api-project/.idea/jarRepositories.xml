@@ -2,6 +2,11 @@
 <project version="4">
   <component name="RemoteRepositoriesConfiguration">
     <remote-repository>
+      <option name="id" value="liferay-ce" />
+      <option name="name" value="Liferay CE" />
+      <option name="url" value="https://repository.liferay.com/nexus/content/groups/liferay-ce" />
+    </remote-repository>
+    <remote-repository>
       <option name="id" value="mirrors.ibiblio.org" />
       <option name="name" value="mirrors.ibiblio.org" />
       <option name="url" value="https://nexussrv.netcracker.com/content/repositories/ibiblio" />
