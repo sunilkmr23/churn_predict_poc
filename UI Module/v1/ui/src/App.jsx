@@ -355,7 +355,17 @@ function App() {
     setExternalPrediction(null);
     try {
       const res = await fetch(`/api/churn/predict-by-id/${encodeURIComponent(customerId)}`);
-      const data = await res.json();
+      const responseText = await res.text();
+      let data = {};
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          if (res.ok) {
+            throw new Error('Prediction service returned an invalid response.');
+          }
+        }
+      }
       if (!res.ok) {
         throw new Error(data.detail || data.error || `Prediction failed (${res.status}).`);
       }
@@ -385,9 +395,7 @@ function App() {
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
 
-  const isContractActive = ['1', 'Y', 'YES', 'TRUE', 'ACTIVE'].includes(
-    String(dashboardCustomer?.monthlyContract ?? '').toUpperCase(),
-  );
+  const isContractActive = Boolean(dashboardCustomer);
 
   return (
     <main className="dashboard-shell">
